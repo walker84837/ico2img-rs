@@ -17,3 +17,5 @@ target/
 *.ico
 *.png
 *.jpg
+*.bmp
+*.webp
