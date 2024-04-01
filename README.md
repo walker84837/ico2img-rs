@@ -1,6 +1,11 @@
-# Rust ICO to PNG Converter
+# ico2img: ICO converter to images
 
-Convert ICO images to PNG format using this Rust command-line utility.
+Convert ICO images to other image formats:
+
+  - PNG
+  - JPG
+  - BMP
+  - WebP
 
 ## Table of Contents
 
@@ -16,16 +21,15 @@ Make sure you have Rust and Cargo installed. Then, you can build and install the
 converter using the following steps:
 
 ``` console
-$ git clone https://github.com/walker84837/ico-to-png-rs.git
-$ cd ico-to-png
+$ git clone https://github.com/walker84837/ico2img-rs.git
+$ cd ico2img
 $ cargo build --release
-$ cargo install
 ```
 
 ## Usage
 
 ``` console
-$ ico-to-png <ICO_FILE> -o <OUTPUT_DIRECTORY> [-i <INDEX>] [--verbose]
+$ ico2img <ICO_FILE> -o <OUTPUT_DIRECTORY> -c <CONFIG_FILE> [-i <INDEX>] [--verbose]
 ```
 
 #### Options
@@ -33,25 +37,27 @@ $ ico-to-png <ICO_FILE> -o <OUTPUT_DIRECTORY> [-i <INDEX>] [--verbose]
   - `<ICO_FILE>`: The path to the ICO image.
   - `-o`: The output PNG image or directory.
   - `-i`: Index of the image to convert (default is 0).
+  - `-f, --format`: The format of the converted image.
+  - `-c`: Configuration file path (optional)
   - `-v, --verbose`: Enable verbose output.
 
 ## Support
 
 If you encounter any issues or have questions, feel free to [open an
-issue](https://github.com/walker84837/ico-to-png-rs/issues).
+issue](https://github.com/walker84837/ico2img-rs/issues).
 
 ## Contributing
 
-Contributions to the colour-blender-rs project are always welcome\! If you want
-to contribute:
+Contributions to the ico2img-rs project are always welcome! If you want to
+contribute:
 
   - Format your code with
-
+    
     ``` console
     $ rustfmt --edition 2021 src/*
     ```
 
-  - Follow the code of conduct, of course.
+  - Follow the [code of conduct](CODE_OF_CONDUCT.md), of course.
 
   - Use Rust stable rather than Rust nightly for compatibility reasons.
 
@@ -68,7 +74,7 @@ to contribute:
       - What's the difference between using it and not using it?
 
 If you need help or guidance with this project, open a new
-[issue](https://github.com/walker84837/ico-to-png-rs/issues).
+[issue](https://github.com/walker84837/ico2img-rs/issues).
 
 ## License
 
