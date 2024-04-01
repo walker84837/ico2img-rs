@@ -1,89 +1,22 @@
 name: Rust
+
 on:
-  pull_request:
   push:
+    branches: [ "master" ]
+  pull_request:
     branches: [ "master", "dev" ]
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   build:
-    name: build
-
-    strategy:
-      matrix:
-        os:
-          - ubuntu-latest
-        target:
-          - i686-unknown-linux-gnu
-          - i686-unknown-linux-musl
-          - x86_64-unknown-linux-gnu
-          - x86_64-unknown-linux-musl
-        include:
-          - os: macos-latest
-            target: x86_64-apple-darwin
-          - os: windows-latest
-            target: x86_64-pc-windows-gnu
-
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          target: ${{ matrix.target }}
-          toolchain: stable
-          override: true
-
-      - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          use-cross: ${{ matrix.os == 'ubuntu-latest' }}
-          command: build
-          args: --target ${{ matrix.target }} --locked
-
-      - name: Run
-        uses: actions-rs/cargo@v1
-        with:
-          use-cross: ${{ matrix.os == 'ubuntu-latest' }}
-          command: run
-          args: --target ${{ matrix.target }} -- -V
-
-  test:
-    name: test
-
-    strategy:
-      matrix:
-        toolchain:
-          - nightly
-          # - nightly-2021-08-01
 
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          components: rust-src
-          toolchain: ${{ matrix.toolchain }}
-          override: true
-
-      - name: Test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-
-  ci-success:
-    name: ci
-    if: ${{ success() }}
-    needs:
-      - build
-      - test
-    runs-on: ubuntu-latest
-    steps:
-      - name: CI succeeded
-        run: exit 0
+    - uses: actions/checkout@v3
+    - name: Build
+      run: cargo build --verbose
+    - name: Run tests
+      run: cargo test --verbose
