@@ -1,0 +1,30 @@
+# Maintainer: walker84837 <walker84837@gmail.com>
+pkgname=ico2img
+_pkgname=ico2img-rs
+pkgver=0.3.0
+pkgrel=1
+pkgdesc="Convert ICO images to other image formats"
+arch=('any')
+url="https://github.com/walker84837/ico2img-rs"
+license=('MIT OR Apache-2.0')
+depends=('cargo')
+makedepends=('git')
+
+_gitname="$_pkgname"
+source=("git+${url}.git")
+sha256sums=('SKIP')
+
+prepare() {
+	cd "$srcdir/$_gitname"
+	git submodule update --init --recursive
+}
+
+build() {
+	cd "$srcdir/$_gitname"
+	cargo build --release --locked
+}
+
+package() {
+	cd "$srcdir/$_gitname"
+	install -Dm755 "target/release/$pkgname" -t "$pkgdir/usr/bin/"
+}
