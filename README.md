@@ -1,4 +1,4 @@
-# ico2img: ICO converter to images
+# ico2img: convert ICO format to other formats
 
 Convert ICO images to other image formats:
 
@@ -32,11 +32,9 @@ $ cargo build --release
 $ ico2img <ICO_FILE> -o <OUTPUT_DIRECTORY> -c <CONFIG_FILE> [-i <INDEX>] [--verbose]
 ```
 
-#### Options
-
   - `<ICO_FILE>`: The path to the ICO image.
   - `-o`: The output PNG image or directory.
-  - `-i`: Index of the image to convert (default is 0).
+  - `-i, --index`: Index of the image to convert (default is 0).
   - `-f, --format`: The format of the converted image.
   - `-c`: Configuration file path (optional)
   - `-v, --verbose`: Enable verbose output.
@@ -58,20 +56,7 @@ contribute:
     ```
 
   - Follow the [code of conduct](CODE_OF_CONDUCT.md), of course.
-
-  - Use Rust stable rather than Rust nightly for compatibility reasons.
-
-  - If you must use an external library, please use lightweight ones (e.g.
-    `ureq` over `reqwest`, `async-std` over `tokio`).
-
-  - Use the standard library rather than reinventing the wheel.
-
-  - For major changes (e.g. a new feature), open an issue and describe the
-    following points
-    
-      - Why should it be added? What does it add, and why should it even be
-        considered?
-      - What's the difference between using it and not using it?
+  - For major changes (e.g. a new feature), open an issue.
 
 If you need help or guidance with this project, open a new
 [issue](https://github.com/walker84837/ico2img-rs/issues).
