@@ -48,24 +48,17 @@ enum SupportedImages {
     Jpeg,
     Bmp,
     Webp,
+    Unsupported,
 }
 
-impl std::str::FromStr for SupportedImages {
-    type Err = anyhow::Error;
-
-    fn from_str(format: &str) -> Result<Self, Self::Err> {
-        match format.to_lowercase().as_str() {
-            "png" => Ok(Self::Png),
-            "jpg" | "jpeg" => Ok(Self::Jpeg),
-            "bmp" => Ok(Self::Bmp),
-            "webp" => Ok(Self::Webp),
-            _ => {
-                error!(
-                    "The specified format '{}' is not supported at the moment.",
-                    format
-                );
-                bail!("The specified format is not supported at the moment.")
-            }
+impl From<String> for SupportedImages {
+    fn from(value: String) -> Self {
+        match value.to_lowercase().as_str() {
+            "png" => Self::Png,
+            "jpg" | "jpeg" => Self::Jpeg,
+            "bmp" => Self::Bmp,
+            "webp" => Self::Webp,
+            _ => Self::Unsupported,
         }
     }
 }
@@ -78,49 +71,38 @@ fn main() -> Result<()> {
     }
 
     let path = &args.file;
-    info!("Opening ICO file: {:?}", path);
-    let reader = BufReader::new(File::open(path).map_err(|e| {
-        error!("Failed to open ICO file: {:?}", e);
-        e
-    })?);
+    println!("Opening ICO file: {:?}", path);
+    let reader = BufReader::new(File::open(path)?);
 
-    info!("Reading ICO directory.");
-    let icon_dir = IconDir::read(reader).map_err(|e| {
-        error!("Failed to read ICO directory: {:?}", e);
-        e
-    })?;
-
+    println!("Reading ICO directory.");
+    let icon_dir = IconDir::read(reader)?;
     let index = args.image_index;
-    let mut format = args.format.clone();
+    let mut format = args.format;
 
-    info!(
+    println!(
         "Number of entries in ICO file: {}",
         icon_dir.entries().len()
     );
 
+    // TODO: should i use assert!()?
     if icon_dir.entries().is_empty() {
-        error!("No images found in the ICO file.");
         bail!("No images found in the ICO file.");
     }
 
     if index >= icon_dir.entries().len() {
-        error!("Invalid image index: {}.", index);
         bail!("Invalid image index: {}.", index);
     }
 
     let entry = &icon_dir.entries()[index];
-    info!(
+    println!(
         "Image details: {}x{} - {} bits per pixel",
         entry.width(),
         entry.height(),
         entry.bits_per_pixel()
     );
 
-    info!("Creating output file: {:?}", &args.output);
-    let mut writer = BufWriter::new(File::create(&args.output).map_err(|e| {
-        error!("Failed to create output file: {:?}", e);
-        e
-    })?);
+    println!("Creating output file: {:?}", &args.output);
+    let mut writer = BufWriter::new(File::create(&args.output)?);
 
     if let Some(ref conf) = args.config {
         info!("Loading configuration from: {:?}", conf);
@@ -144,20 +126,21 @@ fn main() -> Result<()> {
                 error!("Output format type isn't specified in configuration file.");
                 anyhow!("Output format type isn't specified.")
             })?
-            .parse()
-            .map_err(|e| {
-                error!("Failed to parse output format: {:?}", e);
-                e
-            })?;
+            .to_string()
+            .into();
     }
 
-    info!("Handling ICO file.");
+    if let SupportedImages::Unsupported = format {
+        bail!("Unsupported image format");
+    }
+
+    println!("Handling ICO file.");
     let buffer = handle_ico(&icon_dir, index)?;
 
-    info!("Writing image to output file.");
+    println!("Writing image to output file.");
     write_image(&mut writer, &buffer, &format)?;
 
-    info!("Image conversion completed successfully.");
+    println!("Image conversion completed successfully.");
     Ok(())
 }
 
@@ -169,31 +152,24 @@ fn main() -> Result<()> {
 /// * `index` - The index of the image to convert
 ///
 fn handle_ico(icon_dir: &IconDir, index: usize) -> Result<Vec<u8>> {
+    // same here, should i use asserts?
     if icon_dir.entries().is_empty() {
-        error!("No images found in the ICO file.");
         bail!("No images found in the ICO file.");
     } else if index >= icon_dir.entries().len() {
-        error!("Invalid image index: {}.", index);
         bail!("Invalid image index: {}.", index);
     }
 
     let entry = &icon_dir.entries()[index];
-    info!(
+    println!(
         "Decoding image at index {}: {}x{} - {} bits per pixel",
         index,
         entry.width(),
         entry.height(),
         entry.bits_per_pixel()
     );
-    let image = entry.decode().map_err(|e| {
-        error!("Failed to decode image: {:?}", e);
-        e
-    })?;
+    let image = entry.decode()?;
     let mut buffer = Vec::new();
-    image.write_png(&mut buffer).map_err(|e| {
-        error!("Failed to write image as PNG: {:?}", e);
-        e
-    })?;
+    image.write_png(&mut buffer)?;
     Ok(buffer)
 }
 
@@ -212,62 +188,27 @@ fn write_image<W: Write>(writer: &mut W, buffer: &[u8], format: &SupportedImages
     match format {
         SupportedImages::Png => {
             info!("Writing image in PNG format.");
-            writer.write_all(buffer).map_err(|e| {
-                error!("Failed to write PNG image: {:?}", e);
-                e
-            })?;
+            writer.write_all(buffer)?;
         }
         SupportedImages::Jpeg => {
             info!("Writing image in JPEG format.");
-            let image = load_from_memory(buffer)
-                .map_err(|e| {
-                    error!("Failed to load image from memory: {:?}", e);
-                    e
-                })?
-                .to_rgb8();
-            image
-                .write_to(&mut cursor, ImageFormat::Jpeg)
-                .map_err(|e| {
-                    error!("Failed to write JPEG image: {:?}", e);
-                    e
-                })?;
-            writer.write_all(&img_buffer).map_err(|e| {
-                error!("Failed to write JPEG image to writer: {:?}", e);
-                e
-            })?;
+            let image = load_from_memory(buffer)?.to_rgb8();
+            image.write_to(&mut cursor, ImageFormat::Jpeg)?;
+            writer.write_all(&img_buffer)?;
         }
         SupportedImages::Bmp => {
             info!("Writing image in BMP format.");
-            let image = load_from_memory(buffer).map_err(|e| {
-                error!("Failed to load image from memory: {:?}", e);
-                e
-            })?;
-            image.write_to(&mut cursor, ImageFormat::Bmp).map_err(|e| {
-                error!("Failed to write BMP image: {:?}", e);
-                e
-            })?;
-            writer.write_all(&img_buffer).map_err(|e| {
-                error!("Failed to write BMP image to writer: {:?}", e);
-                e
-            })?;
+            let image = load_from_memory(buffer)?;
+            image.write_to(&mut cursor, ImageFormat::Bmp)?;
+            writer.write_all(&img_buffer)?;
         }
         SupportedImages::Webp => {
             info!("Writing image in WebP format.");
-            let image = load_from_memory(buffer).map_err(|e| {
-                error!("Failed to load image from memory: {:?}", e);
-                e
-            })?;
-            image
-                .write_to(&mut cursor, ImageFormat::WebP)
-                .map_err(|e| {
-                    error!("Failed to write WebP image: {:?}", e);
-                    e
-                })?;
-            writer.write_all(&img_buffer).map_err(|e| {
-                error!("Failed to write WebP image to writer: {:?}", e);
-                e
-            })?;
+            let image = load_from_memory(buffer)?;
+            image.write_to(&mut cursor, ImageFormat::WebP)?;
+            writer.write_all(&img_buffer)?;
         }
+        SupportedImages::Unsupported => unreachable!(),
     }
     Ok(())
 }
