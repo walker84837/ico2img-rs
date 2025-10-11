@@ -1,30 +1,55 @@
 use anyhow::{anyhow, bail, Result};
 use clap::{Parser, ValueEnum};
 use ico::IconDir;
-use image::{load_from_memory, ImageFormat};
+use image::ImageFormat;
 use log::{error, info};
 use std::{
-    fs::File,
-    io::{BufReader, BufWriter, Cursor, Read, Write},
-    path::PathBuf,
+    fs::{create_dir_all, File},
+    io::{prelude::*, BufReader, BufWriter},
+    path::{Path, PathBuf},
+    str::FromStr,
 };
 use toml::Value;
 
 #[derive(Parser)]
+#[command(author, version, about, long_about = None)]
 struct Args {
     #[arg(help = "The path to the ICO image.")]
     file: PathBuf,
 
-    #[arg(short, help = "The output PNG image.")]
-    output: PathBuf,
+    #[arg(short, help = "The output directory for the PNG image(s).")]
+    output: Option<PathBuf>,
 
     #[arg(
         short,
         long = "index",
-        default_value_t = 0,
-        help = "Index of the image to convert."
+        help = "Index of the image to convert.",
+        conflicts_with_all = &["extract_all", "extract_range", "indices"]
     )]
-    image_index: usize,
+    image_index: Option<usize>,
+
+    #[arg(
+        long,
+        help = "Extract all images from the ICO file.",
+        conflicts_with_all = &["image_index", "extract_range", "indices"]
+    )]
+    extract_all: bool,
+
+    #[arg(
+        long,
+        help = "Extract a range of images (e.g., 0-5).",
+        conflicts_with_all = &["image_index", "extract_all", "indices"]
+    )]
+    extract_range: Option<String>,
+
+    #[arg(
+        long,
+        help = "Extract specific images by indices (e.g., 0,2,4).",
+        conflicts_with_all = &["image_index", "extract_all", "extract_range"],
+        use_value_delimiter = true,
+        value_delimiter = ','
+    )]
+    indices: Option<Vec<usize>>,
 
     #[arg(
         short,
@@ -48,17 +73,18 @@ enum SupportedImages {
     Jpeg,
     Bmp,
     Webp,
-    Unsupported,
 }
 
-impl From<String> for SupportedImages {
-    fn from(value: String) -> Self {
-        match value.to_lowercase().as_str() {
-            "png" => Self::Png,
-            "jpg" | "jpeg" => Self::Jpeg,
-            "bmp" => Self::Bmp,
-            "webp" => Self::Webp,
-            _ => Self::Unsupported,
+impl FromStr for SupportedImages {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        match s.to_lowercase().as_str() {
+            "png" => Ok(Self::Png),
+            "jpg" | "jpeg" => Ok(Self::Jpeg),
+            "bmp" => Ok(Self::Bmp),
+            "webp" => Ok(Self::Webp),
+            _ => bail!("Unsupported image format: {}", s),
         }
     }
 }
@@ -67,57 +93,40 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     if args.verbose {
-        simple_logger::init().unwrap();
+        simple_logger::init()?;
     }
 
     let path = &args.file;
-    println!("Opening ICO file: {:?}", path);
+    info!("Opening ICO file: {:?}", path);
     let reader = BufReader::new(File::open(path)?);
 
-    println!("Reading ICO directory.");
+    info!("Reading ICO directory.");
     let icon_dir = IconDir::read(reader)?;
-    let index = args.image_index;
-    let mut format = args.format;
+    let mut format = args.format.clone();
 
-    println!(
+    info!(
         "Number of entries in ICO file: {}",
         icon_dir.entries().len()
     );
 
-    // TODO: should i use assert!()?
     if icon_dir.entries().is_empty() {
         bail!("No images found in the ICO file.");
     }
-
-    if index >= icon_dir.entries().len() {
-        bail!("Invalid image index: {}.", index);
-    }
-
-    let entry = &icon_dir.entries()[index];
-    println!(
-        "Image details: {}x{} - {} bits per pixel",
-        entry.width(),
-        entry.height(),
-        entry.bits_per_pixel()
-    );
-
-    println!("Creating output file: {:?}", &args.output);
-    let mut writer = BufWriter::new(File::create(&args.output)?);
 
     if let Some(ref conf) = args.config {
         info!("Loading configuration from: {:?}", conf);
         let mut reader = BufReader::new(File::open(conf).map_err(|e| {
             error!("Failed to open configuration file: {:?}", e);
-            e
+            anyhow!("Failed to open configuration file: {:?}", e)
         })?);
         let mut contents = String::new();
         reader.read_to_string(&mut contents).map_err(|e| {
             error!("Failed to read configuration file: {:?}", e);
-            e
+            anyhow!("Failed to read configuration file: {:?}", e)
         })?;
         let config: Value = toml::from_str(&contents).map_err(|e| {
             error!("Failed to parse configuration file: {:?}", e);
-            e
+            anyhow!("Failed to parse configuration file: {:?}", e)
         })?;
 
         format = config["ico2img"]["format"]
@@ -126,43 +135,102 @@ fn main() -> Result<()> {
                 error!("Output format type isn't specified in configuration file.");
                 anyhow!("Output format type isn't specified.")
             })?
-            .to_string()
-            .into();
+            .parse()?;
     }
 
-    if let SupportedImages::Unsupported = format {
-        bail!("Unsupported image format");
+    let output_dir = args.output.clone().unwrap_or_else(|| PathBuf::from("."));
+    create_dir_all(&output_dir)?;
+
+    let indices_to_extract = get_indices_to_extract(&args, icon_dir.entries().len())?;
+
+    for index in indices_to_extract {
+        let entry = &icon_dir.entries()[index];
+        info!(
+            "Image details: {}x{} - {} bits per pixel",
+            entry.width(),
+            entry.height(),
+            entry.bits_per_pixel()
+        );
+
+        let output_path = get_output_path(&output_dir, &args.file, index, &format);
+        info!("Creating output file: {:?}", &output_path);
+        let mut writer = BufWriter::new(File::create(&output_path)?);
+
+        info!("Handling ICO file.");
+        let buffer = handle_ico(entry)?;
+
+        info!("Writing image to output file.");
+        write_image(&mut writer, &buffer, &format)?;
     }
 
-    println!("Handling ICO file.");
-    let buffer = handle_ico(&icon_dir, index)?;
-
-    println!("Writing image to output file.");
-    write_image(&mut writer, &buffer, &format)?;
-
-    println!("Image conversion completed successfully.");
+    info!("Image conversion completed successfully.");
     Ok(())
 }
 
-/// Handles the ICO file and returns the image data in PNG format.
-///
-/// # Arguments
-///
-/// * `icon_dir` - The ICO directory containing image entries
-/// * `index` - The index of the image to convert
-///
-fn handle_ico(icon_dir: &IconDir, index: usize) -> Result<Vec<u8>> {
-    // same here, should i use asserts?
-    if icon_dir.entries().is_empty() {
-        bail!("No images found in the ICO file.");
-    } else if index >= icon_dir.entries().len() {
-        bail!("Invalid image index: {}.", index);
+fn get_indices_to_extract(args: &Args, num_entries: usize) -> Result<Vec<usize>> {
+    if args.extract_all {
+        return Ok((0..num_entries).collect());
     }
 
-    let entry = &icon_dir.entries()[index];
-    println!(
-        "Decoding image at index {}: {}x{} - {} bits per pixel",
-        index,
+    if let Some(range_str) = &args.extract_range {
+        let parts: Vec<&str> = range_str.split('-').collect();
+        if parts.len() != 2 {
+            bail!("Invalid range format. Use start-end.");
+        }
+        let start = parts[0].parse::<usize>()?;
+        let end = parts[1].parse::<usize>()?;
+        if start > end {
+            bail!("Invalid range: start cannot be greater than end.");
+        }
+        if end >= num_entries {
+            bail!("Invalid range: end index is out of bounds.");
+        }
+        return Ok((start..=end).collect());
+    }
+
+    if let Some(indices) = &args.indices {
+        for &index in indices {
+            if index >= num_entries {
+                bail!("Invalid index: {} is out of bounds.", index);
+            }
+        }
+        return Ok(indices.clone());
+    }
+
+    if let Some(index) = args.image_index {
+        if index >= num_entries {
+            bail!("Invalid image index: {}.", index);
+        }
+        return Ok(vec![index]);
+    }
+
+    // Default to extracting the first image if no other option is provided.
+    if num_entries > 0 {
+        Ok(vec![0])
+    } else {
+        bail!("No images to extract.")
+    }
+}
+
+fn get_output_path(
+    output_dir: &Path,
+    input_path: &Path,
+    index: usize,
+    format: &SupportedImages,
+) -> PathBuf {
+    let file_stem = input_path.file_stem().unwrap_or_default().to_string_lossy();
+    let extension = match format {
+        SupportedImages::Png => "png",
+        SupportedImages::Jpeg => "jpg",
+        SupportedImages::Bmp => "bmp",
+        SupportedImages::Webp => "webp",
+    };
+    output_dir.join(format!("{}_{}.{}", file_stem, index, extension))
+}
+
+fn handle_ico(entry: &ico::IconDirEntry) -> Result<Vec<u8>> {
+    info!(
+        "Decoding image: {}x{} - {} bits per pixel",
         entry.width(),
         entry.height(),
         entry.bits_per_pixel()
@@ -173,18 +241,11 @@ fn handle_ico(icon_dir: &IconDir, index: usize) -> Result<Vec<u8>> {
     Ok(buffer)
 }
 
-/// Writes the image buffer to the specified writer in the given format.
-///
-/// # Arguments
-///
-/// * `writer` - The writer to output the image to
-/// * `buffer` - The image data buffer
-/// * `format` - The desired output image format
-///
-fn write_image<W: Write>(writer: &mut W, buffer: &[u8], format: &SupportedImages) -> Result<()> {
-    let mut img_buffer = Vec::new();
-    let mut cursor = Cursor::new(&mut img_buffer);
-
+fn write_image<W: Write + Seek>(
+    writer: &mut W,
+    buffer: &[u8],
+    format: &SupportedImages,
+) -> Result<()> {
     match format {
         SupportedImages::Png => {
             info!("Writing image in PNG format.");
@@ -192,23 +253,19 @@ fn write_image<W: Write>(writer: &mut W, buffer: &[u8], format: &SupportedImages
         }
         SupportedImages::Jpeg => {
             info!("Writing image in JPEG format.");
-            let image = load_from_memory(buffer)?.to_rgb8();
-            image.write_to(&mut cursor, ImageFormat::Jpeg)?;
-            writer.write_all(&img_buffer)?;
+            let image = image::load_from_memory(buffer)?.to_rgb8();
+            image.write_to(writer, ImageFormat::Jpeg)?;
         }
         SupportedImages::Bmp => {
             info!("Writing image in BMP format.");
-            let image = load_from_memory(buffer)?;
-            image.write_to(&mut cursor, ImageFormat::Bmp)?;
-            writer.write_all(&img_buffer)?;
+            let image = image::load_from_memory(buffer)?;
+            image.write_to(writer, ImageFormat::Bmp)?;
         }
         SupportedImages::Webp => {
             info!("Writing image in WebP format.");
-            let image = load_from_memory(buffer)?;
-            image.write_to(&mut cursor, ImageFormat::WebP)?;
-            writer.write_all(&img_buffer)?;
+            let image = image::load_from_memory(buffer)?;
+            image.write_to(writer, ImageFormat::WebP)?;
         }
-        SupportedImages::Unsupported => unreachable!(),
     }
     Ok(())
 }
