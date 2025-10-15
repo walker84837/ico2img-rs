@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail, Result};
 use clap::{Parser, ValueEnum};
 use ico::IconDir;
 use image::ImageFormat;
-use log::{error, info};
+use log::info;
 use std::{
     fs::{create_dir_all, File},
     io::{prelude::*, BufReader, BufWriter},
@@ -67,7 +67,7 @@ struct Args {
 }
 
 /// Enumeration of supported image output formats
-#[derive(ValueEnum, Clone, Debug)]
+#[derive(ValueEnum, Copy, Clone, Debug)]
 enum SupportedImages {
     Png,
     Jpeg,
@@ -115,26 +115,19 @@ fn main() -> Result<()> {
 
     if let Some(ref conf) = args.config {
         info!("Loading configuration from: {:?}", conf);
-        let mut reader = BufReader::new(File::open(conf).map_err(|e| {
-            error!("Failed to open configuration file: {:?}", e);
-            anyhow!("Failed to open configuration file: {:?}", e)
-        })?);
+        let mut reader = BufReader::new(
+            File::open(conf).map_err(|e| anyhow!("Failed to open configuration file: {:?}", e))?,
+        );
         let mut contents = String::new();
-        reader.read_to_string(&mut contents).map_err(|e| {
-            error!("Failed to read configuration file: {:?}", e);
-            anyhow!("Failed to read configuration file: {:?}", e)
-        })?;
-        let config: Value = toml::from_str(&contents).map_err(|e| {
-            error!("Failed to parse configuration file: {:?}", e);
-            anyhow!("Failed to parse configuration file: {:?}", e)
-        })?;
+        reader
+            .read_to_string(&mut contents)
+            .map_err(|e| anyhow!("Failed to read configuration file: {:?}", e))?;
+        let config: Value = toml::from_str(&contents)
+            .map_err(|e| anyhow!("Failed to parse configuration file: {:?}", e))?;
 
         format = config["ico2img"]["format"]
             .as_str()
-            .ok_or_else(|| {
-                error!("Output format type isn't specified in configuration file.");
-                anyhow!("Output format type isn't specified.")
-            })?
+            .ok_or_else(|| anyhow!("Output format type isn't specified."))?
             .parse()?;
     }
 
@@ -152,7 +145,7 @@ fn main() -> Result<()> {
             entry.bits_per_pixel()
         );
 
-        let output_path = get_output_path(&output_dir, &args.file, index, &format);
+        let output_path = get_output_path(&output_dir, &args.file, index, format);
         info!("Creating output file: {:?}", &output_path);
         let mut writer = BufWriter::new(File::create(&output_path)?);
 
@@ -160,7 +153,7 @@ fn main() -> Result<()> {
         let buffer = handle_ico(entry)?;
 
         info!("Writing image to output file.");
-        write_image(&mut writer, &buffer, &format)?;
+        write_image(&mut writer, &buffer, format)?;
     }
 
     info!("Image conversion completed successfully.");
@@ -174,17 +167,19 @@ fn get_indices_to_extract(args: &Args, num_entries: usize) -> Result<Vec<usize>>
 
     if let Some(range_str) = &args.extract_range {
         let parts: Vec<&str> = range_str.split('-').collect();
-        if parts.len() != 2 {
-            bail!("Invalid range format. Use start-end.");
-        }
+        assert_ne!(parts.len(), 2, "Invalid range format. Use start-end.");
         let start = parts[0].parse::<usize>()?;
         let end = parts[1].parse::<usize>()?;
-        if start > end {
-            bail!("Invalid range: start cannot be greater than end.");
-        }
-        if end >= num_entries {
-            bail!("Invalid range: end index is out of bounds.");
-        }
+
+        assert!(
+            start > end,
+            "Invalid range: start cannot be greater than end."
+        );
+        assert!(
+            end >= num_entries,
+            "Invalid range: end index is out of bounds."
+        );
+
         return Ok((start..=end).collect());
     }
 
@@ -216,7 +211,7 @@ fn get_output_path(
     output_dir: &Path,
     input_path: &Path,
     index: usize,
-    format: &SupportedImages,
+    format: SupportedImages,
 ) -> PathBuf {
     let file_stem = input_path.file_stem().unwrap_or_default().to_string_lossy();
     let extension = match format {
@@ -244,7 +239,7 @@ fn handle_ico(entry: &ico::IconDirEntry) -> Result<Vec<u8>> {
 fn write_image<W: Write + Seek>(
     writer: &mut W,
     buffer: &[u8],
-    format: &SupportedImages,
+    format: SupportedImages,
 ) -> Result<()> {
     match format {
         SupportedImages::Png => {
