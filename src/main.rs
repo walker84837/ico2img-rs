@@ -1,12 +1,12 @@
 use anyhow::{anyhow, bail, Result};
 use clap::{Parser, ValueEnum};
-use ico::IconDir;
+use ico::{IconDir, IconDirEntry};
 use image::ImageFormat;
 use log::info;
 use std::{
     fmt::Display,
     fs::{self, File},
-    io::{prelude::*, BufReader, BufWriter},
+    io::{prelude::*, BufReader, BufWriter, Seek},
     path::{Path, PathBuf},
     str::FromStr,
 };
@@ -54,20 +54,19 @@ struct Args {
 
     #[arg(
         short,
-        long,
-        default_value = "png",
-        help = "The format of the resulting converted image."
+        long = "format",
+        help = "Specify output format (png, jpg, bmp, webp)."
     )]
     format: SupportedImages,
 
-    #[arg(short, long, help = "Enable verbose output.")]
-    verbose: bool,
-
-    #[arg(short, help = "The configuration path")]
+    #[arg(short, long = "config", help = "Optional TOML configuration file.")]
     config: Option<PathBuf>,
+
+    #[arg(short, long, help = "Enable verbose logging.")]
+    verbose: bool,
 }
 
-/// Enumeration of supported image output formats
+/// Enumeration of supported output image formats
 #[derive(ValueEnum, Copy, Clone, Debug)]
 enum SupportedImages {
     Png,
@@ -114,7 +113,7 @@ fn main() -> Result<()> {
 
     info!("Reading ICO directory.");
     let icon_dir = IconDir::read(reader)?;
-    let mut format = args.format.clone();
+    let mut format = args.format;
 
     if icon_dir.entries().is_empty() {
         bail!("No images found in the ICO file.");
@@ -127,16 +126,10 @@ fn main() -> Result<()> {
 
     if let Some(ref config) = args.config {
         info!("Loading configuration from: {:?}", config);
-        let mut reader = BufReader::new(
-            File::open(config)
-                .map_err(|e| anyhow!("Failed to open configuration file: {:?}", e))?,
-        );
+        let mut reader = BufReader::new(File::open(config)?);
         let mut contents = String::new();
-        reader
-            .read_to_string(&mut contents)
-            .map_err(|e| anyhow!("Failed to read configuration file: {:?}", e))?;
-        let config: Value = toml::from_str(&contents)
-            .map_err(|e| anyhow!("Failed to parse configuration file: {:?}", e))?;
+        reader.read_to_string(&mut contents)?;
+        let config: Value = toml::from_str(&contents)?;
 
         format = config["ico2img"]["format"]
             .as_str()
@@ -180,26 +173,27 @@ fn get_indices_to_extract(args: &Args, num_entries: usize) -> Result<Vec<usize>>
 
     if let Some(range_str) = &args.extract_range {
         let parts: Vec<&str> = range_str.split('-').collect();
-        assert_ne!(parts.len(), 2, "Invalid range format. Use start-end.");
+        if parts.len() != 2 {
+            bail!("Invalid range format. Use start-end.");
+        }
+
         let start = parts[0].parse::<usize>()?;
         let end = parts[1].parse::<usize>()?;
 
-        assert!(
-            start > end,
-            "Invalid range: start cannot be greater than end."
-        );
-        assert!(
-            end >= num_entries,
-            "Invalid range: end index is out of bounds."
-        );
+        if start > end {
+            bail!("Invalid range: start cannot be greater than end.");
+        }
+        if end >= num_entries {
+            bail!("Invalid range: end index out of bounds.");
+        }
 
         return Ok((start..=end).collect());
     }
 
     if let Some(indices) = &args.indices {
-        for &index in indices {
-            if index >= num_entries {
-                bail!("Invalid index: {} is out of bounds.", index);
+        for &i in indices {
+            if i >= num_entries {
+                bail!("Invalid index: {} is out of bounds.", i);
             }
         }
         return Ok(indices.clone());
@@ -212,12 +206,7 @@ fn get_indices_to_extract(args: &Args, num_entries: usize) -> Result<Vec<usize>>
         return Ok(vec![index]);
     }
 
-    // Default to extracting the first image if no other option is provided.
-    if num_entries > 0 {
-        Ok(vec![0])
-    } else {
-        bail!("No images to extract.")
-    }
+    Ok(vec![0])
 }
 
 fn get_output_path(
@@ -228,19 +217,19 @@ fn get_output_path(
 ) -> PathBuf {
     let file_stem = input_path.file_stem().unwrap_or_default().to_string_lossy();
     let extension = format.to_string();
-    output_dir.join(format!("{}_{}.{}", file_stem, index, extension))
+    output_dir.join(format!("{file_stem}_{index}.{extension}"))
 }
 
-fn handle_ico(entry: &ico::IconDirEntry) -> Result<Vec<u8>> {
+fn handle_ico(entry: &IconDirEntry) -> Result<Vec<u8>> {
     info!(
         "Decoding image: {}x{} - {} bits per pixel",
         entry.width(),
         entry.height(),
         entry.bits_per_pixel()
     );
-    let image = entry.decode()?;
+
     let mut buffer = Vec::new();
-    image.write_png(&mut buffer)?;
+    entry.decode()?.write_png(&mut buffer)?;
     Ok(buffer)
 }
 
