@@ -4,7 +4,8 @@ use ico::IconDir;
 use image::ImageFormat;
 use log::info;
 use std::{
-    fs::{create_dir_all, File},
+    fmt::Display,
+    fs::{self, File},
     io::{prelude::*, BufReader, BufWriter},
     path::{Path, PathBuf},
     str::FromStr,
@@ -89,6 +90,17 @@ impl FromStr for SupportedImages {
     }
 }
 
+impl Display for SupportedImages {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SupportedImages::Png => write!(f, "png"),
+            SupportedImages::Jpeg => write!(f, "jpg"),
+            SupportedImages::Bmp => write!(f, "bmp"),
+            SupportedImages::Webp => write!(f, "webp"),
+        }
+    }
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
 
@@ -104,19 +116,20 @@ fn main() -> Result<()> {
     let icon_dir = IconDir::read(reader)?;
     let mut format = args.format.clone();
 
+    if icon_dir.entries().is_empty() {
+        bail!("No images found in the ICO file.");
+    }
+
     info!(
         "Number of entries in ICO file: {}",
         icon_dir.entries().len()
     );
 
-    if icon_dir.entries().is_empty() {
-        bail!("No images found in the ICO file.");
-    }
-
-    if let Some(ref conf) = args.config {
-        info!("Loading configuration from: {:?}", conf);
+    if let Some(ref config) = args.config {
+        info!("Loading configuration from: {:?}", config);
         let mut reader = BufReader::new(
-            File::open(conf).map_err(|e| anyhow!("Failed to open configuration file: {:?}", e))?,
+            File::open(config)
+                .map_err(|e| anyhow!("Failed to open configuration file: {:?}", e))?,
         );
         let mut contents = String::new();
         reader
@@ -132,7 +145,7 @@ fn main() -> Result<()> {
     }
 
     let output_dir = args.output.clone().unwrap_or_else(|| PathBuf::from("."));
-    create_dir_all(&output_dir)?;
+    fs::create_dir_all(&output_dir)?;
 
     let indices_to_extract = get_indices_to_extract(&args, icon_dir.entries().len())?;
 
@@ -214,12 +227,7 @@ fn get_output_path(
     format: SupportedImages,
 ) -> PathBuf {
     let file_stem = input_path.file_stem().unwrap_or_default().to_string_lossy();
-    let extension = match format {
-        SupportedImages::Png => "png",
-        SupportedImages::Jpeg => "jpg",
-        SupportedImages::Bmp => "bmp",
-        SupportedImages::Webp => "webp",
-    };
+    let extension = format.to_string();
     output_dir.join(format!("{}_{}.{}", file_stem, index, extension))
 }
 
