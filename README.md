@@ -21,8 +21,7 @@ Make sure you have Rust and Cargo installed. Then, you can build and install the
 converter using the following steps:
 
 ``` console
-$ git clone https://github.com/walker84837/ico2img-rs.git
-$ cd ico2img
+$ git clone https://github.com/walker84837/ico2img-rs.git && cd ico2img
 $ cargo build --release
 ```
 
@@ -52,7 +51,7 @@ contribute:
   - Format your code with
     
     ``` console
-    $ rustfmt --edition 2021 src/*
+    $ cargo fmt
     ```
 
   - Follow the [code of conduct](CODE_OF_CONDUCT.md), of course.
