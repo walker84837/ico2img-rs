@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, Result};
 use clap::{Parser, ValueEnum};
-use ico::{IconDir, IconDirEntry};
+use ico::{IconDir, IconDirEntry, ResourceType};
 use image::ImageFormat;
 use log::info;
 use std::{
@@ -15,7 +15,7 @@ use toml::Value;
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(help = "The path to the ICO image.")]
+    #[arg(help = "The path to the ICO or CUR file.")]
     file: PathBuf,
 
     #[arg(short, help = "The output directory for the PNG image(s).")]
@@ -111,18 +111,20 @@ fn main() -> Result<()> {
     info!("Opening ICO file: {:?}", path);
     let reader = BufReader::new(File::open(path)?);
 
-    info!("Reading ICO directory.");
+    info!("Reading icon directory.");
     let icon_dir = IconDir::read(reader)?;
     let mut format = args.format;
 
     if icon_dir.entries().is_empty() {
-        bail!("No images found in the ICO file.");
+        bail!("No images found in the file.");
     }
 
-    info!(
-        "Number of entries in ICO file: {}",
-        icon_dir.entries().len()
-    );
+    match icon_dir.resource_type() {
+        ResourceType::Cursor => info!("Detected CUR file (cursor)."),
+        ResourceType::Icon => info!("Detected ICO file (icon)."),
+    }
+
+    info!("Number of entries: {}", icon_dir.entries().len());
 
     if let Some(ref config) = args.config {
         info!("Loading configuration from: {:?}", config);
@@ -144,25 +146,48 @@ fn main() -> Result<()> {
 
     for index in indices_to_extract {
         let entry = &icon_dir.entries()[index];
-        info!(
-            "Image details: {}x{} - {} bits per pixel",
-            entry.width(),
-            entry.height(),
-            entry.bits_per_pixel()
-        );
 
-        let output_path = get_output_path(&output_dir, &args.file, index, format);
+        match entry.resource_type() {
+            ResourceType::Cursor => {
+                let hotspot = entry.cursor_hotspot();
+                info!(
+                    "Cursor entry {}: {}x{} - hotspot: {:?}",
+                    index,
+                    entry.width(),
+                    entry.height(),
+                    hotspot
+                );
+            }
+            ResourceType::Icon => {
+                info!(
+                    "Icon entry {}: {}x{} - {} bpp",
+                    index,
+                    entry.width(),
+                    entry.height(),
+                    entry.bits_per_pixel()
+                );
+            }
+        }
+
+        let output_path = get_output_path(
+            &output_dir,
+            &args.file,
+            index,
+            format,
+            entry.resource_type(),
+            entry.cursor_hotspot(),
+        );
         info!("Creating output file: {:?}", &output_path);
         let mut writer = BufWriter::new(File::create(&output_path)?);
 
-        info!("Handling ICO file.");
-        let buffer = handle_ico(entry)?;
+        info!("Decoding image.");
+        let buffer = handle_entry(entry)?;
 
         info!("Writing image to output file.");
         write_image(&mut writer, &buffer, format)?;
     }
 
-    info!("Image conversion completed successfully.");
+    info!("Conversion completed successfully.");
     Ok(())
 }
 
@@ -214,20 +239,21 @@ fn get_output_path(
     input_path: &Path,
     index: usize,
     format: SupportedImages,
+    resource_type: ResourceType,
+    hotspot: Option<(u16, u16)>,
 ) -> PathBuf {
     let file_stem = input_path.file_stem().unwrap_or_default().to_string_lossy();
     let extension = format.to_string();
-    output_dir.join(format!("{file_stem}_{index}.{extension}"))
+    match resource_type {
+        ResourceType::Cursor => {
+            let (hx, hy) = hotspot.unwrap_or((0, 0));
+            output_dir.join(format!("{file_stem}_{index}_h{hx}x{hy}.{extension}"))
+        }
+        ResourceType::Icon => output_dir.join(format!("{file_stem}_{index}.{extension}")),
+    }
 }
 
-fn handle_ico(entry: &IconDirEntry) -> Result<Vec<u8>> {
-    info!(
-        "Decoding image: {}x{} - {} bits per pixel",
-        entry.width(),
-        entry.height(),
-        entry.bits_per_pixel()
-    );
-
+fn handle_entry(entry: &IconDirEntry) -> Result<Vec<u8>> {
     let mut buffer = Vec::new();
     entry.decode()?.write_png(&mut buffer)?;
     Ok(buffer)
