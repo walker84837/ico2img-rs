@@ -131,7 +131,7 @@ fn main() -> Result<()> {
         reader.read_to_string(&mut contents)?;
         let config: Value = toml::from_str(&contents)?;
 
-        format = config["ico2img"]["format"]
+        format = config["format"]
             .as_str()
             .ok_or_else(|| anyhow!("Output format type isn't specified."))?
             .parse()?;

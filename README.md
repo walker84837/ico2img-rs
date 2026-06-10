@@ -1,4 +1,4 @@
-# ico2img: convert ICO format to other formats
+# ico2any: convert ICO format to any format
 
 Convert ICO images to other image formats:
 
@@ -21,14 +21,14 @@ Make sure you have Rust and Cargo installed. Then, you can build and install the
 converter using the following steps:
 
 ``` console
-$ git clone https://github.com/walker84837/ico2img-rs.git && cd ico2img
+$ git clone https://github.com/walker84837/ico2any.git && cd ico2any
 $ cargo build --release
 ```
 
 ## Usage
 
 ``` console
-$ ico2img <ICO_FILE> -o <OUTPUT_DIRECTORY> -c <CONFIG_FILE> [-i <INDEX>] [--verbose]
+$ ico2any <ICO_FILE> -o <OUTPUT_DIRECTORY> -c <CONFIG_FILE> [-i <INDEX>] [--verbose]
 ```
 
   - `<ICO_FILE>`: The path to the ICO image.
@@ -41,11 +41,11 @@ $ ico2img <ICO_FILE> -o <OUTPUT_DIRECTORY> -c <CONFIG_FILE> [-i <INDEX>] [--verb
 ## Support
 
 If you encounter any issues or have questions, feel free to [open an
-issue](https://github.com/walker84837/ico2img-rs/issues).
+issue](https://github.com/walker84837/ico2any/issues).
 
 ## Contributing
 
-Contributions to the ico2img-rs project are always welcome! If you want to
+Contributions to the ico2any project are always welcome! If you want to
 contribute:
 
   - Format your code with
@@ -58,7 +58,7 @@ contribute:
   - For major changes (e.g. a new feature), open an issue.
 
 If you need help or guidance with this project, open a new
-[issue](https://github.com/walker84837/ico2img-rs/issues).
+[issue](https://github.com/walker84837/ico2any/issues).
 
 ## License
 

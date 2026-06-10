@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-10
+
+### Changed
+
+  - Rename project to `ico2any`: the tool now converts to multiple formats.
+  - Remove project-name-dependent TOML section from config file; config is now flat (`format = "webp"`).
+
 ## [0.3.0] - 2024-07-15
 
 ### Added

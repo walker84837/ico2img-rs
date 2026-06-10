@@ -1,11 +1,11 @@
 # Maintainer: walker84837 <walker84837@gmail.com>
-pkgname=ico2img
-_pkgname=ico2img-rs
-pkgver=0.3.0
+pkgname=ico2any
+_pkgname=ico2any
+pkgver=0.4.0
 pkgrel=1
 pkgdesc="Convert ICO images to other image formats"
 arch=('any')
-url="https://github.com/walker84837/ico2img-rs"
+url="https://github.com/walker84837/ico2any"
 license=('MIT OR Apache-2.0')
 depends=('cargo')
 makedepends=('git')

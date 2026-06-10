@@ -18,7 +18,6 @@ customized conversion settings. The configuration file should have the following
 structure:
 
 ``` toml
-[ico2img]
 format = "ext"
 ```
 
@@ -35,7 +34,6 @@ defaults to PNG.
 ## Examples
 
 ``` toml
-[ico2img]
 format = "webp"
 ```
 
